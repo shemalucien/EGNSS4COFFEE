@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,13 +53,16 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -77,7 +81,6 @@ import org.technoserve.farmcollector.database.FarmViewModelFactory
 import org.technoserve.farmcollector.hasLocationPermission
 import org.technoserve.farmcollector.map.MapViewModel
 import org.technoserve.farmcollector.map.getCenterOfPolygon
-import org.technoserve.farmcollector.utils.convertSize
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -86,7 +89,6 @@ import java.util.Date
 import java.util.Objects
 import java.util.UUID
 import javax.inject.Inject
-
 
 @Composable
 fun AddFarm(navController: NavController, siteId: Long) {
@@ -129,7 +131,7 @@ fun FarmForm(
     var village by rememberSaveable { mutableStateOf("") }
     var district by rememberSaveable { mutableStateOf("") }
 
-    //var size by rememberSaveable { mutableStateOf("") }
+    // var size by rememberSaveable { mutableStateOf("") }
     //var size by remember { mutableStateOf("") }
     // var area by remember { mutableStateOf(0.0) }
 
@@ -146,8 +148,11 @@ fun FarmForm(
     )
 
     val mapViewModel: MapViewModel = viewModel()
-    val size by mapViewModel.size.collectAsState()
-    //var textFieldValue by remember { mutableStateOf(TextFieldValue(size.toString())) }
+    var size by rememberSaveable {
+        mutableStateOf(
+            sharedPref.getString("plot_size", "") ?: ""
+        )
+    }
 
     val file = context.createImageFile()
     val uri = FileProvider.getUriForFile(
@@ -156,6 +161,26 @@ fun FarmForm(
     )
     val showDialog = remember { mutableStateOf(false) }
     val showLocationDialog = remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                // Update the value from SharedPreferences when the screen is resumed
+                size = sharedPref.getString("plot_size", "") ?: ""
+//                delete plot_size from sharedPreference
+                with(sharedPref.edit()) {
+                    remove("plot_size")
+                    apply()
+                }
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     if (showLocationDialog.value) {
         AlertDialog(
@@ -182,12 +207,13 @@ fun FarmForm(
         // convert selectedUnit to hectares
         //val sizeInHa = convertSize(size.toDouble(), selectedUnit)
 
-        // Save the Calculate Area if the entered Size is greater than 4 otherwise keep the entered size Value
-        val sizeInHa = if ((size.toFloatOrNull() ?: 0f) < 4f) {
-            convertSize(size.toDouble(), selectedUnit)
-        } else {
-            mapViewModel.calculateArea(coordinatesData)?:0.0f
-        }
+//        // Save the Calculate Area if the entered Size is greater than 4 otherwise keep the entered size Value
+//        val sizeInHa = if ((size.toFloatOrNull() ?: 0f) < 4f) {
+//            convertSize(size.toDouble(), selectedUnit)
+//        } else {
+//            mapViewModel.calculateArea(coordinatesData)?:0.0f
+//        }
+        val sizeInHa = size.toFloatOrNull() ?: 0f
 
         //save unit in sharedPreference
         with(sharedPref.edit()) {
@@ -226,13 +252,12 @@ fun FarmForm(
         AlertDialog(
             modifier = Modifier.padding(horizontal = 32.dp),
             onDismissRequest = { showDialog.value = false },
-            title = { Text(text = "Add Farm") },
+            title = { Text(text = stringResource(id = R.string.add_farm)) },
             text = {
                 Column {
                     Text(text = stringResource(id = R.string.confirm_add_farm))
                 }
             },
-
             confirmButton = {
                 TextButton(onClick = {
                     saveFarm()
@@ -449,11 +474,12 @@ fun FarmForm(
                 singleLine = true,
                 value = size,
                 onValueChange = {
-                    mapViewModel.updateSize(it)
-                    val newSize = it.toDoubleOrNull() ?: 0.0
-                    mapViewModel.updateSize(newSize.toString()) // Update ViewModel size based on TextField input
+                    size = it
+                    with(sharedPref.edit()) {
+                        putString("plot_size", size)
+                        apply()
+                    }
                 },
-
                 keyboardOptions = KeyboardOptions.Default.copy(
                     keyboardType = KeyboardType.Number,
                 ),
@@ -469,6 +495,8 @@ fun FarmForm(
                     .weight(1f)
                     .padding(bottom = 16.dp)
             )
+
+            //AreaInputField( farmViewModel = farmViewModel)
             Spacer(modifier = Modifier.width(16.dp))
             // Size measure
             ExposedDropdownMenuBox(
@@ -618,8 +646,9 @@ fun FarmForm(
                 .padding(bottom = 5.dp)
                 .height(50.dp),
         ) {
+            val enteredSize = size.toFloatOrNull() ?: 0f
             Text(
-                text = if ((size.toFloatOrNull() ?: 0f) >= 4f) {
+                text = if (enteredSize >= 4f) {
                     stringResource(id = R.string.set_polygon)
                 } else {
                     stringResource(id = R.string.get_coordinates)

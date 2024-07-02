@@ -3,6 +3,7 @@ package org.technoserve.farmcollector.ui.screens
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ContentValues.TAG
+import android.content.Context
 import android.location.Location
 import android.os.Looper
 import android.util.Log
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.google.android.gms.location.LocationCallback
@@ -51,6 +53,7 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.tasks.OnTokenCanceledListener
 import org.technoserve.farmcollector.R
 import org.technoserve.farmcollector.database.Farm
+import org.technoserve.farmcollector.database.FarmViewModel
 import org.technoserve.farmcollector.hasLocationPermission
 import org.technoserve.farmcollector.map.MapScreen
 import org.technoserve.farmcollector.map.MapViewModel
@@ -63,6 +66,10 @@ import org.technoserve.farmcollector.utils.GeoCalculator
  * This screen helps you to capture and visualize farm polygon.
  * When capturing, You are able to start, add point, clear map or remove a point on the map
  */
+
+const val CALCULATED_AREA_OPTION = "CALCULATED_AREA"
+const val ENTERED_AREA_OPTION = "ENTERED_AREA"
+
 @OptIn(ExperimentalLayoutApi::class)
 @SuppressLint("MissingPermission")
 @Composable
@@ -80,6 +87,7 @@ fun SetPolygon(navController: NavController, viewModel: MapViewModel) {
     val farmInfo = farmData?.first
     var accuracy by remember { mutableStateOf("") }
     var viewSelectFarm by remember { mutableStateOf(false) }
+    val sharedPref = context.getSharedPreferences("FarmCollector", Context.MODE_PRIVATE)
 
     val locationRequest = LocationRequest.create().apply {
         priority = LocationRequest.PRIORITY_HIGH_ACCURACY
@@ -88,10 +96,6 @@ fun SetPolygon(navController: NavController, viewModel: MapViewModel) {
     }
 
     val mapViewModel: MapViewModel = viewModel()
-    val size by mapViewModel.size.collectAsState()
-
-    // State to handle TextField value
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(size.toString())) }
 
     if (!isCapturingCoordinates && farmInfo == null) {
         fusedLocationClient.getCurrentLocation(locationRequest.priority,
@@ -134,34 +138,16 @@ fun SetPolygon(navController: NavController, viewModel: MapViewModel) {
         viewSelectFarm = true
     }
 
-//    // Confirm farm polygon setting
-//    if (showConfirmDialog.value) {
-//        ConfirmDialog(stringResource(id = R.string.set_polygon),
-//            stringResource(id = R.string.confirm_set_polygon),
-//            showConfirmDialog,
-//            fun() {
-//                viewModel.clearCoordinates()
-//                viewModel.addCoordinates(coordinates)
-//                navController.previousBackStackEntry?.savedStateHandle?.apply {
-//                    set("coordinates", coordinates)
-//                }
-//                navController.navigateUp()
-//            })
-//    }
-
-
-    val enteredArea = size.toDoubleOrNull() ?: 0.0
-    val calculatedArea = GeoCalculator.calculateArea(coordinates) ?: 0.0f
+    val enteredArea = sharedPref.getString("plot_size", "0.0")?.toDoubleOrNull() ?: 0.0
+    val calculatedArea = mapViewModel.calculateArea(coordinates)
 
     // Confirm farm polygon setting
     if (showConfirmDialog.value) {
-
-
         ConfirmDialog(
             title = stringResource(id = R.string.set_polygon),
             message = stringResource(id = R.string.confirm_set_polygon),
             showConfirmDialog,
-            fun(){
+            fun() {
                 mapViewModel.clearCoordinates()
                 mapViewModel.addCoordinates(coordinates)
                 navController.previousBackStackEntry?.savedStateHandle?.apply {
@@ -177,16 +163,16 @@ fun SetPolygon(navController: NavController, viewModel: MapViewModel) {
         showDialog = mapViewModel.showDialog.collectAsState().value,
         onDismiss = { mapViewModel.dismissDialog() },
         onConfirm = { chosenArea ->
-            val chosenSize = if (chosenArea.contains("Calculated")) mapViewModel.calculatedArea.toString() else mapViewModel.size.toString()
-            Log.d(TAG, "Choosen Size ${chosenSize}")
-            mapViewModel.updateSize(chosenSize)
-            textFieldValue = TextFieldValue(chosenSize) // Update TextFieldValue
+            val chosenSize = when (chosenArea) {
+                CALCULATED_AREA_OPTION -> calculatedArea.toString()
+                ENTERED_AREA_OPTION -> enteredArea.toString()
+                else -> throw IllegalArgumentException("Unknown area option: $chosenArea")
+            }
+            sharedPref.edit().putString("plot_size", chosenSize).apply()
             navController.navigateUp()
-        },
-        calculatedArea = calculatedArea.toDouble(),
+        } ,
+        calculatedArea = calculatedArea,
         enteredArea = enteredArea
-
-
     )
 
     // Confirm clear map

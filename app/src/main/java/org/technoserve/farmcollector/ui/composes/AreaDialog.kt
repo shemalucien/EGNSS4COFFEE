@@ -1,10 +1,17 @@
 package org.technoserve.farmcollector.ui.composes
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import org.technoserve.farmcollector.R
+
+const val CALCULATED_AREA_OPTION = "CALCULATED_AREA"
+const val ENTERED_AREA_OPTION = "ENTERED_AREA"
 
 @SuppressLint("DefaultLocale")
 @Composable
@@ -16,33 +23,44 @@ fun AreaDialog(
     enteredArea: Double
 ) {
     if (showDialog) {
+        val calculatedAreaString = stringResource(
+            id = R.string.calculated_area,
+            String.format("%.2f", calculatedArea)
+        )
+        val enteredAreaString = stringResource(
+            id = R.string.entered_size,
+            String.format("%.2f", enteredArea)
+        )
         val options = listOf(
-            "Calculated Area (${String.format("%.2f", calculatedArea)} hectares)",
-            "Entered Area (${String.format("%.2f", enteredArea)} hectares)"
+            CALCULATED_AREA_OPTION to calculatedAreaString,
+            ENTERED_AREA_OPTION to enteredAreaString
         )
 
         AlertDialog(
             onDismissRequest = onDismiss,
             title = {
-                Text(text = "Choose Area")
+                Text(text = stringResource(id = R.string.choose_area))
             },
             text = {
-                Text(text = "Please choose the area to use:")
+                Text(text = stringResource(id = R.string.please_choose_area))
             },
             confirmButton = {
-                TextButton(onClick = { onConfirm(options[0]) }) {
-                    Text(text = options[0])
-                }
-                TextButton(onClick = { onConfirm(options[1]) }) {
-                    Text(text = options[1])
+                Column {
+                    TextButton(onClick = { onConfirm(CALCULATED_AREA_OPTION) }) {
+                        Text(text = options[0].second)
+                    }
+                    TextButton(onClick = { onConfirm(ENTERED_AREA_OPTION) }) {
+                        Text(text = options[1].second)
+                    }
                 }
             },
             dismissButton = {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(id = R.string.cancel))
                 }
             }
         )
     }
 }
+
 
